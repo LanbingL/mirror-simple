@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Mirror (Word Stream)</title>
+    <title>The Mirror</title>
     <style>
         body, html {
             margin: 0;
@@ -153,6 +153,38 @@
             transition: opacity 0.5s, transform 0.5s;
         }
 
+        /* API status badge */
+        .api-status {
+            margin-top: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            color: #04202a;
+            background: #ffd700; /* yellow for checking */
+            display: inline-block;
+            min-width: 88px;
+            text-align: center;
+        }
+        .api-status.ok { background: #7ef59e; color: #023a1f; }
+        .api-status.fail { background: #ff9b9b; color: #3a0000; }
+
+        /* Fixed top-right badge (always visible) */
+        .api-status-fixed {
+            position: fixed;
+            top: 6px; /* moved higher */
+            right: 8px;
+            z-index: 99999;
+            padding: 10px 14px;
+            border-radius: 14px;
+            background: #ffd700;
+            color: #04202a;
+            font-weight: 700;
+            font-size: 0.95rem;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+        }
+        .api-status-fixed.ok { background: #7ef59e; color: #023a1f; }
+        .api-status-fixed.fail { background: #ff9b9b; color: #3a0000; }
+
         input[type="password"] {
             background: #222;
             border: 1px solid #444;
@@ -204,7 +236,9 @@
     <div class="api-controls" id="controls">
         <button onclick="startAI()">Start</button>
         <div id="status-log"></div>
+        <div id="api-status" class="api-status">Checking...</div>
     </div>
+    <div id="api-status-fixed" class="api-status-fixed">Checking...</div>
 
     <canvas id="captureCanvas"></canvas>
 
@@ -251,7 +285,15 @@
             gloss.style.transform = `translate(${-(x/10)}px, ${-(y/10)}px)`;
         });
 
-        window.addEventListener('load', startWebcam);
+        window.addEventListener('load', () => {
+            startWebcam();
+            // show initial hint
+            aiTextDiv.classList.add('fade-in');
+            aiTextDiv.innerText = 'Click Start';
+            // initial API status check
+            checkApiStatus();
+            setInterval(checkApiStatus, 10000);
+        });
 
         // --- 3. AI Logic ---
 
@@ -293,12 +335,37 @@
 
                 try {
                     log("Thinking...");
-                    const keywordsString = await callBackend(base64Image);
+                    const result = await callBackend(base64Image);
+                    console.log('raw backend result:', result);
                     log("Sequence received.");
-                    
-                    // Convert "Word1 • Word2 • Word3" -> ["Word1", "Word2", "Word3"]
-                    const keywordArray = keywordsString.split('•').map(s => s.trim());
-                    
+
+                    // Show raw response briefly in status for debugging
+                    try { statusLog.innerText = JSON.stringify(result).slice(0, 300); } catch (e) { statusLog.innerText = String(result); }
+
+                    // Normalize the response to a string and split into words.
+                    let text = '';
+                    // Common OpenAI response shapes
+                    if (result?.choices && result.choices.length > 0) {
+                        // chat completions: choices[0].message.content
+                        if (result.choices[0].message && result.choices[0].message.content) text = result.choices[0].message.content;
+                        // older completions: choices[0].text
+                        else if (result.choices[0].text) text = result.choices[0].text;
+                    }
+                    // direct string
+                    if (!text) {
+                        if (typeof result === 'string') text = result;
+                        else if (result?.content) text = result.content;
+                        else text = String(result || '');
+                    }
+
+                    // Try bullet split first, then comma, then newline
+                    let keywordArray = text.split('•').map(s => s.trim()).filter(Boolean);
+                    if (keywordArray.length === 0) keywordArray = text.split(',').map(s => s.trim()).filter(Boolean);
+                    if (keywordArray.length === 0) keywordArray = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                    if (keywordArray.length === 0 && text.trim().length > 0) keywordArray = [text.trim()];
+
+                    if (keywordArray.length === 0) throw new Error('No keywords returned');
+
                     // Start the display cycle
                     startKeywordSequence(keywordArray);
 
@@ -353,6 +420,31 @@
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.error?.message || resp.statusText);
             return data.choices[0].message.content;
+        }
+
+        // API health check
+        async function checkApiStatus() {
+            const el = document.getElementById('api-status');
+            const el2 = document.getElementById('api-status-fixed');
+            // try /api/health first (Vercel), fall back to /health (local server)
+            const endpoints = [`${BACKEND_URL}/api/health`, `${BACKEND_URL}/health`];
+            for (const url of endpoints) {
+                try {
+                    const res = await fetch(url, { method: 'GET' });
+                    if (!res.ok) throw new Error(res.statusText || 'status ' + res.status);
+                    await res.json();
+                    el.classList.remove('fail'); el.classList.add('ok'); el.innerText = 'API OK';
+                    if (el2) { el2.classList.remove('fail'); el2.classList.add('ok'); el2.innerText = 'API OK'; }
+                    return true;
+                } catch (err) {
+                    // try next
+                    console.debug('health check failed for', url, err && err.message);
+                }
+            }
+            // all failed
+            el.classList.remove('ok'); el.classList.add('fail'); el.innerText = 'API Down';
+            if (el2) { el2.classList.remove('ok'); el2.classList.add('fail'); el2.innerText = 'API Down'; }
+            return false;
         }
     </script>
 </body>
