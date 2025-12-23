@@ -44,18 +44,29 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { imageBase64 } = req.body;
+    // Parse body if it's a string
+    let body = req.body;
+    if (typeof body === 'string') {
+      body = JSON.parse(body);
+    }
+
+    const { imageBase64 } = body;
+    
     if (!imageBase64) {
+      console.error('Missing imageBase64 in request');
       return res.status(400).json({ error: 'Missing imageBase64' });
     }
 
     const OPENAI_KEY = process.env.OPENAI_API_KEY;
     if (!OPENAI_KEY) {
-      return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
+      console.error('OPENAI_API_KEY environment variable not set');
+      return res.status(500).json({ error: 'OPENAI_API_KEY not configured' });
     }
 
+    console.log('Building payload for image analysis...');
     const payload = buildChatPayload(imageBase64);
 
+    console.log('Calling OpenAI API...');
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -66,13 +77,16 @@ module.exports = async (req, res) => {
     });
 
     const data = await r.json();
+    
     if (!r.ok) {
+      console.error('OpenAI API error:', data);
       return res.status(r.status).json(data);
     }
 
+    console.log('Success, returning data');
     res.status(200).json(data);
   } catch (err) {
     console.error('Analyze error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack });
   }
 };
