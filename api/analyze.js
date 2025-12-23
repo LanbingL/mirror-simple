@@ -1,8 +1,27 @@
 // api/analyze.js
 // Vercel serverless function that handles POST /api/analyze
-// This is the Vercel-compatible version of the backend.
 
-const { buildChatPayload } = require('../server/prompt');
+function buildChatPayload(base64Image) {
+  return {
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Analyze this image. Provide exactly 10 abstract, poetic sets of keywords (no more than 3 words per set) describing the person, lighting, or mood.\n- Return exactly 10 single-word keywords (no extra punctuation).\n- Separate words with a single ' • ' (bullet) character.\n- Example output: 'Shadow • Glimmer • Blue'.\nReturn ONLY the keywords string with no explanation."
+          },
+          {
+            type: "image_url",
+            image_url: { url: `data:image/jpeg;base64,${base64Image}` }
+          }
+        ]
+      }
+    ],
+    max_tokens: 60
+  };
+}
 
 module.exports = async (req, res) => {
   // Enable CORS
