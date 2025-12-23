@@ -10,6 +10,11 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '6mb' })); // images in base64 can be large
 
+// Serve static frontend when available so frontend and API share same origin in dev
+const path = require('path');
+const publicPath = path.join(__dirname, '..', 'public');
+app.use(express.static(publicPath));
+
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 if (!OPENAI_KEY) console.warn('Warning: OPENAI_API_KEY not set in environment');
 
