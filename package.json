@@ -1,0 +1,11 @@
+{
+  "name": "mirror-simple",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server/server.js",
+    "server": "node server/server.js",
+    "server:dev": "nodemon server/server.js",
+    "serve-client": "npx http-server public -p 8080"
+  }
+}

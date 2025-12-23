@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Mirror (Word Stream)</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #050505;
+            overflow: hidden;
+            perspective: 1000px;
+            font-family: monospace;
+        }
+
+        /* --- 3D Mirror Container --- */
+        .mirror-container {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            border-radius: 45px;
+            transform-style: preserve-3d;
+            box-shadow: 
+                0 0 10px 2px rgba(255, 255, 255, 0.9),
+                0 0 30px 5px rgba(255, 255, 255, 0.5),
+                0 0 80px 20px rgba(255, 255, 255, 0.15);
+        }
+
+        .glass-surface {
+            position: absolute;
+            top: 5px; left: 5px; right: 5px; bottom: 5px;
+            border-radius: 40px;
+            overflow: hidden;
+            background: #000;
+            transform: translateZ(20px);
+            box-shadow: inset 0 0 20px rgba(0,0,0,1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .glass-video {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 110%; height: 110%;
+            object-fit: cover;
+            transform: translate(-50%, -50%) scaleX(-1);
+            z-index: 0;
+            filter: blur(3px) brightness(0.8) contrast(1.3) saturate(1.1);
+        }
+
+        .glass-gloss {
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            z-index: 2;
+            pointer-events: none;
+            background: 
+                radial-gradient(circle at 50% 50%, rgba(255,255,255,0.1) 0%, transparent 60%),
+                linear-gradient(45deg, transparent 40%, rgba(255,255,255,0.1) 50%, transparent 60%);
+            mix-blend-mode: screen;
+            opacity: 0.8;
+            transition: transform 0.1s ease-out;
+        }
+
+        .glass-edge {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            border-radius: 40px;
+            z-index: 3;
+            pointer-events: none;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 
+                inset 3px 3px 6px rgba(255, 255, 255, 0.4),
+                inset -3px -3px 6px rgba(0, 0, 0, 0.6);
+        }
+
+        /* --- AI Text Overlay --- */
+        #ai-text {
+            position: relative;
+            z-index: 10;
+            color: #e6f7ff;
+            font-size: 1.5rem; /* Larger font for single words */
+            font-weight: 300;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            opacity: 0;
+            max-width: 90%;
+            transition: opacity 0.5s ease-in-out, text-shadow 0.35s ease;
+            text-shadow:
+                0 0 6px rgba(255,255,255,0.9),
+                0 0 12px rgba(0,200,255,0.12),
+                0 0 30px rgba(0,150,255,0.10);
+            filter: drop-shadow(0 0 6px rgba(0,150,255,0.08));
+        }
+
+        /* Animated glow when visible */
+        #ai-text.fade-in {
+            opacity: 1 !important;
+            text-shadow:
+                0 0 12px rgba(255,255,255,1),
+                0 0 30px rgba(0,200,255,0.5),
+                0 0 60px rgba(0,150,255,0.35);
+            animation: glowPulse 2.5s ease-in-out infinite;
+        }
+
+        #ai-text.fade-out {
+            opacity: 0 !important;
+        }
+
+        @keyframes glowPulse {
+            0% {
+                text-shadow:
+                    0 0 8px rgba(255,255,255,0.9),
+                    0 0 20px rgba(0,200,255,0.4),
+                    0 0 40px rgba(0,150,255,0.25);
+            }
+            50% {
+                text-shadow:
+                    0 0 16px rgba(255,255,255,1),
+                    0 0 40px rgba(0,200,255,0.55),
+                    0 0 80px rgba(0,150,255,0.4);
+            }
+            100% {
+                text-shadow:
+                    0 0 8px rgba(255,255,255,0.9),
+                    0 0 20px rgba(0,200,255,0.4),
+                    0 0 40px rgba(0,150,255,0.25);
+            }
+        }
+
+        /* --- API Control Panel --- */
+        .api-controls {
+            position: absolute;
+            bottom: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+            z-index: 100;
+            background: rgba(0,0,0,0.9);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #333;
+            transition: opacity 0.5s, transform 0.5s;
+        }
+
+        input[type="password"] {
+            background: #222;
+            border: 1px solid #444;
+            color: white;
+            padding: 10px;
+            border-radius: 6px;
+            width: 250px;
+            outline: none;
+            font-family: sans-serif;
+        }
+
+        button {
+            background: white;
+            color: black;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+        }
+
+        button:hover { background: #ccc; }
+
+        #status-log {
+            color: #aaa;
+            font-size: 0.8rem;
+            margin-top: 10px;
+            max-width: 300px;
+            text-align: center;
+        }
+
+        canvas { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="mirror-container" id="mirror">
+        <div class="glass-surface">
+            <video class="glass-video" autoplay playsinline muted></video>
+            
+            <div id="ai-text">Initialized</div>
+
+            <div class="glass-gloss" id="gloss"></div>
+            <div class="glass-edge"></div>
+        </div>
+    </div>
+
+    <div class="api-controls" id="controls">
+        <button onclick="startAI()">Start</button>
+        <div id="status-log"></div>
+    </div>
+
+    <canvas id="captureCanvas"></canvas>
+
+    <script>
+        // --- 1. Webcam Setup ---
+        const video = document.querySelector('.glass-video');
+        const mirror = document.getElementById('mirror');
+        const gloss = document.getElementById('gloss');
+        const aiTextDiv = document.getElementById('ai-text');
+        const statusLog = document.getElementById('status-log');
+        const captureCanvas = document.getElementById('captureCanvas');
+        const ctx = captureCanvas.getContext('2d');
+        // Backend URL (change if your server runs elsewhere)
+        const BACKEND_URL = 'http://localhost:3000';
+        
+        // Timers
+        let mainIntervalId = null; // 30s capture loop
+        let wordLoopTimeout = null; // Individual word display timer
+
+        async function startWebcam() {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 720, height: 720, facingMode: "user" } });
+                    video.srcObject = stream;
+                    video.onloadedmetadata = () => video.play();
+                } catch (err) {
+                    aiTextDiv.innerText = "Camera Error";
+                    aiTextDiv.classList.add('fade-in');
+                }
+            }
+        }
+
+        // --- 2. 3D Tilt ---
+        document.addEventListener('mousemove', (e) => {
+            const cx = window.innerWidth / 2;
+            const cy = window.innerHeight / 2;
+            const x = e.clientX - cx;
+            const y = e.clientY - cy;
+            const sensitivity = 50; 
+            const maxTilt = 8;
+            let rotateY = Math.min(Math.max(x / sensitivity, -maxTilt), maxTilt);
+            let rotateX = Math.min(Math.max(-(y / sensitivity), -maxTilt), maxTilt);
+            mirror.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+            gloss.style.transform = `translate(${-(x/10)}px, ${-(y/10)}px)`;
+        });
+
+        window.addEventListener('load', startWebcam);
+
+        // --- 3. AI Logic ---
+
+        function log(msg, isError = false) {
+            statusLog.innerText = msg;
+            statusLog.style.color = isError ? "#ff6b6b" : "#aaa";
+        }
+
+        function startAI() {
+            // Start without exposing API key in the browser. The backend holds the key.
+            const controls = document.getElementById('controls');
+            controls.style.transform = "translateY(85%)";
+            controls.style.opacity = "0.6";
+
+            // Trigger first capture
+            captureAndAnalyze();
+
+            // Set interval for 30 seconds
+            if (mainIntervalId) clearInterval(mainIntervalId);
+            mainIntervalId = setInterval(() => captureAndAnalyze(), 30000);
+        }
+
+        async function captureAndAnalyze(apiKey) {
+            // Stop any currently running word loop to prevent overlap
+            clearTimeout(wordLoopTimeout);
+            
+            // Fade out current text immediately
+            aiTextDiv.classList.remove('fade-in');
+            aiTextDiv.classList.add('fade-out');
+            
+            log("Capturing image...");
+
+            setTimeout(async () => {
+                captureCanvas.width = video.videoWidth || 640;
+                captureCanvas.height = video.videoHeight || 480;
+                ctx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+                
+                const base64Image = captureCanvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+
+                try {
+                    log("Thinking...");
+                    const keywordsString = await callBackend(base64Image);
+                    log("Sequence received.");
+                    
+                    // Convert "Word1 • Word2 • Word3" -> ["Word1", "Word2", "Word3"]
+                    const keywordArray = keywordsString.split('•').map(s => s.trim());
+                    
+                    // Start the display cycle
+                    startKeywordSequence(keywordArray);
+
+                } catch (error) {
+                    log("API Error: " + error.message, true);
+                    aiTextDiv.innerText = "Connection Failed";
+                    aiTextDiv.classList.add('fade-in');
+                }
+            }, 1000);
+        }
+
+        // --- 4. The Word Cycle Logic ---
+        function startKeywordSequence(words) {
+            let index = 0;
+            const totalTime = 28000; // 28 seconds (leave 2s buffer for next capture)
+            const timePerWord = totalTime / words.length; 
+            
+            function showNextWord() {
+                if (index >= words.length) return; // Sequence done
+
+                // 1. Set text (while invisible)
+                aiTextDiv.innerText = words[index];
+                
+                // 2. Fade In
+                aiTextDiv.classList.remove('fade-out');
+                aiTextDiv.classList.add('fade-in');
+
+                // 3. Wait, then Fade Out
+                // Visible for 70% of the slot, fade out during last 30%
+                const visibleDuration = timePerWord * 0.7; 
+
+                wordLoopTimeout = setTimeout(() => {
+                    aiTextDiv.classList.remove('fade-in');
+                    aiTextDiv.classList.add('fade-out');
+                    
+                    index++;
+                    // Schedule next word after fade out completes
+                    wordLoopTimeout = setTimeout(showNextWord, 500); // 500ms match CSS transition
+                }, visibleDuration);
+            }
+
+            showNextWord();
+        }
+
+        // Call backend endpoint which holds the OpenAI API key server-side.
+        async function callBackend(base64Image) {
+            const resp = await fetch(`${BACKEND_URL}/api/analyze`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ imageBase64: base64Image })
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error?.message || resp.statusText);
+            return data.choices[0].message.content;
+        }
+    </script>
+</body>
+</html>
